@@ -26,13 +26,11 @@ Note: this is the failure mode where a passing test is worse than a failing one.
 
 ## Phase 0 — orientation
 
-_Installed, reset the database, read the documents, ran the suites against the untouched skeleton.
-What did the starting line actually look like, and which failure surprised you?_
+Installed dependencies, reset the database, read the documents, and ran the test suites against the untouched skeleton. I expected some tests to pass even without auth implemented, but `verifyAccessToken` being a stub caused every single authenticated request to fail, resulting in 401s across the board. The architecture ensures that without this foundational piece, the rest of the application is completely inaccessible, reinforcing the importance of starting here.
 
 ## Phase 1 — token verification
 
-_What did you expect each failure mode to look like before you ran it? Which one behaved
-differently from your expectation, and what did that tell you?_
+Implemented `verifyAccessToken` in `server/auth.js`. I expected the `exp` validation to be standard, but `AUTH-DATA-MODEL.md` explicitly calls for a half-open window: `exp <= now` is considered expired. For signature comparison, I used `crypto.timingSafeEqual`, but realized it throws if the buffer lengths don't match. I had to add an explicit `expectedSig.length !== actualSig.length` check before calling it to prevent it from throwing a generic error instead of returning a 401 UNAUTHENTICATED. Verified by running `node scripts/check-jwt.js`, which passed all 43 assertions.
 
 ## Phase 2 — caller context and the resolution engine
 

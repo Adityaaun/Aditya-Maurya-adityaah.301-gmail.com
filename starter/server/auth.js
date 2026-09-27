@@ -71,12 +71,49 @@ export function issueAccessToken({ userId, orgId, role, permVersion }, secret) {
 // `node scripts/check-jwt.js` is the public test suite for this function.
 // ---------------------------------------------------------------------------
 export function verifyAccessToken(token, secret) {
-  // YOURS TO WRITE. Every failure mode listed above must be a 401 UNAUTHENTICATED.
-  // `node scripts/check-jwt.js` is the public suite for this function.
-  throw Object.assign(
-    new Error('TODO: server/auth.js — verifyAccessToken() is yours to write (AUTH-DATA-MODEL.md §10).'),
-    { code: 'NOT_IMPLEMENTED' }
-  );
+  if (typeof token !== 'string') throw unauthenticated('invalid token');
+
+  const segments = token.split('.');
+  if (segments.length !== 3) throw unauthenticated('malformed token');
+
+  const [headerB64, payloadB64, signatureB64] = segments;
+
+  let header, claims;
+  try {
+    header = JSON.parse(unb64(headerB64).toString('utf8'));
+    claims = JSON.parse(unb64(payloadB64).toString('utf8'));
+  } catch (err) {
+    throw unauthenticated('invalid encoding or JSON');
+  }
+
+  if (!header || typeof header !== 'object' || header.alg !== ALG || header.typ !== 'JWT') {
+    throw unauthenticated('invalid header');
+  }
+
+  const expectedSig = createHmac('sha256', secret)
+    .update(`${headerB64}.${payloadB64}`)
+    .digest();
+
+  const actualSig = unb64(signatureB64);
+
+  if (expectedSig.length !== actualSig.length || !timingSafeEqual(expectedSig, actualSig)) {
+    throw unauthenticated('invalid signature');
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof claims.exp !== 'number' || claims.exp <= now) {
+    throw unauthenticated('token expired');
+  }
+
+  if (claims.iss !== ISS || claims.aud !== AUD) {
+    throw unauthenticated('invalid issuer or audience');
+  }
+
+  if (!claims.jti || typeof claims.jti !== 'string') {
+    throw unauthenticated('missing jti');
+  }
+
+  return claims;
 }
 
 
