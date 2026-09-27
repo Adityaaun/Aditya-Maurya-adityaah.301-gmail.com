@@ -61,3 +61,14 @@ chose not to build belongs here with its reason._
 
 _Things you know are wrong, unfinished, or that you would do differently with another day. Listing
 these honestly is worth more than pretending they do not exist — we will find them anyway._
+
+## Phase 4: React SPA foundation and application shell
+
+- Verified Playwright requirements against UI-INVENTORY.md
+- Replaced original <select> implementation with native Playwright-friendly <button> fields for org switcher
+- Implemented backend /auth/refresh with HttpOnly cookies for session persistence across browser reloads
+- Fixed background-color implementation tied to org theme to ensure measurable UI changes during org switches
+- Finalized implementation of Invite.jsx to redirect natively to / rather than crash React's AuthProvider hierarchy
+- Implemented 'Create Organization' POST API request mapping and UI functionality in App.jsx
+- All 25 UI specifications and Playwright tests pass successfully without regressions
+

@@ -19,7 +19,8 @@ import { registerRoutes } from './routes/index.js';
 const DEV = process.env.NODE_ENV !== 'production';
 const PORT = Number(process.env.PORT ?? 8080);
 const SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
-const DIST = new URL('../dist/', import.meta.url).pathname;
+import { fileURLToPath } from 'node:url';
+const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 
 const db = openDatabase();
 const router = createRouter();
