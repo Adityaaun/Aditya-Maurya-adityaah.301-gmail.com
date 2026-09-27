@@ -16,14 +16,40 @@
 // authenticate(db, secret) returns (req, params) => caller, where caller carries at
 // least { userId, orgId, role, membership, claims }.
 
-const todo = () =>
-  Object.assign(
-    new Error('TODO: server/context.js — authenticate() is yours to write (BRIEF.md §3).'),
-    { code: 'NOT_IMPLEMENTED' }
-  );
+import { verifyAccessToken, assertFresh } from './auth.js';
+import { unauthenticated, notFound } from './http.js';
 
 export function authenticate(db, secret) {
   return function buildContext(req, params) {
-    throw todo();
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw unauthenticated('missing or invalid authorization header');
+    }
+
+    const token = authHeader.slice(7);
+    const claims = verifyAccessToken(token, secret);
+
+    const orgId = params.org ?? params.orgId;
+    if (orgId && orgId !== claims.org) {
+      throw notFound();
+    }
+
+    const membership = db.prepare('SELECT * FROM memberships WHERE user_id = ? AND org_id = ?')
+      .get(claims.sub, claims.org);
+
+    assertFresh(claims, membership);
+
+    if (membership.status === 'removed') {
+      throw unauthenticated('membership removed');
+    }
+
+    return {
+      userId: claims.sub,
+      orgId: claims.org,
+      role: membership.role,
+      membership,
+      claims,
+      now: new Date()
+    };
   };
 }
