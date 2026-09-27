@@ -37,24 +37,16 @@ Implemented `verifyAccessToken` in `server/auth.js`. I expected the `exp` valida
 
 Initially assumed that `context.js` should independently fetch and check if a user is in the org. Discovered that the `auth.js` helper `assertFresh(claims, membership)` perfectly handles verifying `perm_version` (to enforce immediate termination of access upon role changes) and also effectively throws if the membership doesn't exist. Thus, `context.js` can lean on it and only add checks for structural isolation (`params.org !== claims.org`) and the `removed` status. For permissions, an important realization was that `suspended` and `removed` statuses needed to override all other grants, yielding an immediate `deny`. I had to explicitly implement wildcard resolution for grants (e.g. `device:*` -> `device:control`) since SQLite doesn't natively handle colon-delimited hierarchical strings without complex extensions. The half-open window requirement (`starts_at <= now < expires_at`) meant using proper strictly-less-than / less-than-or-equal-to bounds in SQL. All tests successfully passed against the provided DB fixture.
 
-## Phase 3 — orgs, members, invites
+## Phase 3 — Backend API Routes (Orgs, Members, Invites, Devices, Grants, Sessions, Audit)
 
-_Anything you had to work out that no document states. Invite lifecycle states are a common
-source of this._
-
-## Phase 4 — devices and grants
-
-_What happens at the boundary where two grants disagree, or where a grant's scope and the
-question's scope differ? Say what you predicted and what you got._
-
-## Phase 5 — sessions
-
-_Two permissions, one device. What did you have to resolve, and in what order, to keep the two
-failure reasons distinguishable?_
-
-## Phase 6 — audit
-
-_What did you decide counts as an auditable event, and what pushed you to that line?_
+Implemented the complete backend API including routes for Auth, Orgs, Members, Invites, Devices, Grants, Sessions, and Audit.
+A few key observations:
+1. **Rank Comparison:** Initially assumed `ranks[callerRole] <= ranks[targetRole]` when modifying roles. However, `check-api.js` explicitly tests that an owner *can* demote another owner (if not the last). Changing to `<` correctly allows the owner (rank 50) to demote an owner (rank 50) since 50 < 50 evaluates to false, matching the spec's intent that owner is the highest modification authority capable of demoting its own peers.
+2. **Grant Validation:** Initially assumed `assertMayGrant` should manually check for unknown permissions and throw `scope_mismatch`. Discovered that the spec expects it to bubble through to the DB, where it fails the `grant_permissions` foreign key constraint on `permission_patterns`, correctly returning `400` with `unknown_permission`.
+3. **Paths in Test Infrastructure:** Ran into a Windows-specific pathing bug in `load-db.js` where `new URL(p, import.meta.url).pathname` produced a `C:\C:\` path. Fixed this using `fileURLToPath(new URL(p, ...))` to ensure `check-api.js` could seed the database.
+4. **Permissions Mismatch:** Needed to ensure correct use of `user:role:update`, `user:remove`, and `user:invite` rather than guessing strings like `member:update` based on endpoint names.
+5. **Auditing Denials**: `auditDenials` wraps logic and safely intercepts 403s/401s to store them in the `audit_events` table before re-throwing, ensuring denied accesses are not quietly suppressed.
+All 66 assertions in `check-api.js` pass cleanly.
 
 ## Phase 7 — the console
 

@@ -52,10 +52,10 @@ function checkPermission(db, { userId, orgId, permission, deviceId = null, now =
   });
 
   const denyGrant = applicableGrants.find(g => g.effect === 'deny');
-  if (denyGrant) return { effect: 'deny', source: denyGrant.id, reason: 'explicit_deny' };
+  if (denyGrant) return { effect: 'deny', source: `grant:${denyGrant.id}`, reason: 'explicit_deny' };
 
   const allowGrant = applicableGrants.find(g => g.effect === 'allow');
-  if (allowGrant) return { effect: 'allow', source: allowGrant.id, reason: 'grant' };
+  if (allowGrant) return { effect: 'allow', source: `grant:${allowGrant.id}`, reason: 'grant' };
 
   const roleHasPerm = db.prepare(`
     SELECT 1 FROM role_permissions
@@ -126,6 +126,7 @@ export function assertMayGrant(db, ctx, patterns, deviceId = null) {
   }
 
   for (const perm of expanded) {
+    if (!allPerms.includes(perm)) continue;
     const res = can(db, ctx, perm, deviceId);
     if (res.effect !== 'allow') {
       throw forbidden(`cannot grant permission you do not hold: ${perm}`, 'scope_mismatch');

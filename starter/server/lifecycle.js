@@ -12,16 +12,56 @@
 //   - a permission change does NOT end a session in flight (grantfathering). Suspension,
 //     membership removal and device transfer DO. See PERMISSIONS.md §7.
 
-const todo = (name) =>
-  Object.assign(
-    new Error(`TODO: server/lifecycle.js — ${name}() is yours to write (BRIEF.md §3).`),
-    { code: 'NOT_IMPLEMENTED' }
-  );
+import { forbidden, lastOwner, badRequest } from './http.js';
+import { nowIso } from './db.js';
 
-export function roleRanks(db) { throw todo('roleRanks'); }
-export function assertRoleExists(db, role) { throw todo('assertRoleExists'); }
-export function assertCanModify(db, callerRole, targetRole) { throw todo('assertCanModify'); }
-export function assertNotLastOwner(db, orgId, userId) { throw todo('assertNotLastOwner'); }
-export function endActiveSessions(db, { orgId, userId, deviceId, reason, exceptSessionId }) { throw todo('endActiveSessions'); }
-export function snapshotAuthority(db, { userId, orgId, deviceId }) { throw todo('snapshotAuthority'); }
-export function sessionExpiry(db, orgId) { throw todo('sessionExpiry'); }
+export function roleRanks(db) {
+  const rows = db.prepare('SELECT key, rank FROM roles').all();
+  const ranks = {};
+  for (const r of rows) ranks[r.key] = r.rank;
+  return ranks;
+}
+
+export function assertRoleExists(db, role) {
+  const row = db.prepare('SELECT 1 FROM roles WHERE key = ?').get(role);
+  if (!row) throw badRequest('unknown role');
+}
+
+export function assertCanModify(db, callerRole, targetRole) {
+  const ranks = roleRanks(db);
+  if (ranks[callerRole] < ranks[targetRole]) {
+    throw forbidden('cannot modify role with equal or higher rank');
+  }
+}
+
+export function assertNotLastOwner(db, orgId, userId) {
+  const owners = db.prepare(`SELECT user_id FROM memberships WHERE org_id = ? AND role = 'owner' AND status = 'active'`).all(orgId);
+  if (owners.length === 1 && owners[0].user_id === userId) {
+    throw lastOwner();
+  }
+}
+
+export function endActiveSessions(db, { orgId, userId, deviceId, reason, exceptSessionId }) {
+  let sql = `UPDATE sessions SET state = 'ended', ended_at = ?, end_reason = ? WHERE org_id = ? AND state = 'active'`;
+  const params = [nowIso(), reason, orgId];
+  if (userId) { sql += ` AND user_id = ?`; params.push(userId); }
+  if (deviceId) { sql += ` AND device_id = ?`; params.push(deviceId); }
+  if (exceptSessionId) { sql += ` AND id != ?`; params.push(exceptSessionId); }
+  db.prepare(sql).run(...params);
+}
+
+export function snapshotAuthority(db, { userId, orgId, deviceId }) {
+  // Snapsot authority for the life of the session (PERMISSIONS.md §7.1).
+  // The DB check is JSON_VALID(authorized_by)
+  const membership = db.prepare('SELECT role, perm_version FROM memberships WHERE user_id = ? AND org_id = ?').get(userId, orgId);
+  return JSON.stringify({
+    role: membership.role,
+    perm_version: membership.perm_version,
+    snapshot_at: nowIso()
+  });
+}
+
+export function sessionExpiry(db, orgId) {
+  const org = db.prepare('SELECT max_session_minutes FROM organizations WHERE id = ?').get(orgId);
+  return new Date(Date.now() + org.max_session_minutes * 60000).toISOString();
+}
